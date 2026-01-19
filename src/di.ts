@@ -5,13 +5,14 @@ import { MemoryTransactionsRepository } from "./infra/memory/memoryTransactionsR
 import { MutexMap } from "./infra/memory/mutex";
 import { PostgresAccountsRepository } from "./infra/postgres/postgresAccountsRepo";
 import { PostgresTransactionsRepository } from "./infra/postgres/postgresTransactionsRepo";
+import { config } from "./config";
 
 export type ContainerOptions = {
   now?: () => Date;
 };
 
 export function createContainer(options: ContainerOptions = {}) {
-  const usePostgres = process.env.REPO_PROVIDER === "postgres";
+  const usePostgres = config.REPO_PROVIDER === "postgres";
   const accountsRepo = usePostgres
     ? new PostgresAccountsRepository()
     : new MemoryAccountsRepository();
