@@ -9,6 +9,20 @@ Fastify + TypeScript REST API for banking accounts using clean architecture and 
 
 The server listens on `http://localhost:3000` by default.
 
+### Using Postgres
+
+1. Create the database and run [scripts/schema.sql](scripts/schema.sql).
+2. Seed the person table with [scripts/seed.sql](scripts/seed.sql).
+3. Create a local .env from [.env.example](.env.example) and fill in values (loaded automatically).
+4. Or set environment variables directly:
+
+```
+DATABASE_URL=postgres://user:password@localhost:5432/bank
+REPO_PROVIDER=postgres
+```
+
+Then run `npm run dev`.
+
 ## Run tests
 
 `npm test`

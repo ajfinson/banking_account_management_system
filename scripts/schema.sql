@@ -1,3 +1,5 @@
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 CREATE TABLE person (
   person_id TEXT PRIMARY KEY,
   full_name TEXT NOT NULL,
@@ -14,7 +16,7 @@ CREATE TABLE account (
   create_date TIMESTAMP NOT NULL
 );
 
-CREATE TABLE transaction (
+CREATE TABLE transactions (
   transaction_id TEXT PRIMARY KEY,
   account_id TEXT NOT NULL REFERENCES account(account_id),
   value_cents INTEGER NOT NULL,

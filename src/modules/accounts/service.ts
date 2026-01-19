@@ -24,7 +24,8 @@ export class AccountsService {
   constructor(
     private readonly accountsRepo: AccountsRepository,
     private readonly transactionsRepo: TransactionsRepository,
-    private readonly mutexMap: MutexMap
+    private readonly mutexMap: MutexMap,
+    private readonly now: () => Date = () => new Date()
   ) {}
 
   async createAccount(input: CreateAccountRequest): Promise<Account> {
@@ -39,7 +40,7 @@ export class AccountsService {
       accountType: input.accountType,
       balanceCents: initialBalanceCents,
       activeFlag: true,
-      createDate: new Date().toISOString()
+      createDate: this.now().toISOString()
     };
 
     return this.accountsRepo.create(accountInput);
@@ -79,7 +80,7 @@ export class AccountsService {
       const tx = await this.transactionsRepo.create({
         accountId,
         valueCents: amountCents,
-        transactionDate: new Date().toISOString()
+        transactionDate: this.now().toISOString()
       });
 
       const updated = await this.accountsRepo.updateBalance(
@@ -115,7 +116,7 @@ export class AccountsService {
         throw new InsufficientFundsError();
       }
 
-      const today = new Date().toISOString().slice(0, 10);
+      const today = this.now().toISOString().slice(0, 10);
       const withdrawals = await this.transactionsRepo.sumWithdrawalsForDay(
         accountId,
         today
@@ -128,7 +129,7 @@ export class AccountsService {
       const tx = await this.transactionsRepo.create({
         accountId,
         valueCents: -amountCents,
-        transactionDate: new Date().toISOString()
+        transactionDate: this.now().toISOString()
       });
 
       const updated = await this.accountsRepo.updateBalance(

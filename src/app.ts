@@ -1,12 +1,12 @@
 import Fastify from "fastify";
 import { ZodError } from "zod";
 import { AppError } from "./common/errors";
-import { createContainer } from "./di";
+import { ContainerOptions, createContainer } from "./di";
 import { registerAccountsRoutes } from "./modules/accounts/routes";
 
-export function buildApp() {
+export function buildApp(options: ContainerOptions = {}) {
   const app = Fastify({ logger: false });
-  const container = createContainer();
+  const container = createContainer(options);
 
   registerAccountsRoutes(app, container.accountsController);
 

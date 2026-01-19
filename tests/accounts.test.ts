@@ -2,6 +2,8 @@ import { buildApp } from "../src/app";
 import { FastifyInstance } from "fastify";
 
 let app: FastifyInstance;
+let nowValue = new Date("2024-01-01T00:00:00Z");
+const now = () => nowValue;
 
 async function createAccount(overrides?: Record<string, unknown>) {
   const response = await app.inject({
@@ -19,7 +21,7 @@ async function createAccount(overrides?: Record<string, unknown>) {
 }
 
 beforeAll(async () => {
-  app = buildApp();
+  app = buildApp({ now });
   await app.ready();
 });
 
@@ -95,9 +97,7 @@ test("daily limit enforced", async () => {
 });
 
 test("statement filter is inclusive and ordered", async () => {
-  jest.useFakeTimers();
-
-  jest.setSystemTime(new Date("2024-01-01T10:00:00Z"));
+  nowValue = new Date("2024-01-01T10:00:00Z");
   const createRes = await createAccount({
     dailyWithdrawalLimitCents: 5000,
     initialBalanceCents: 10000
@@ -110,7 +110,7 @@ test("statement filter is inclusive and ordered", async () => {
     payload: { amountCents: 100 }
   });
 
-  jest.setSystemTime(new Date("2024-01-02T10:00:00Z"));
+  nowValue = new Date("2024-01-02T10:00:00Z");
   await app.inject({
     method: "POST",
     url: `/accounts/${account.accountId}/deposit`,
@@ -135,5 +135,5 @@ test("statement filter is inclusive and ordered", async () => {
   expect(allList).toHaveLength(2);
   expect(allList[0].transactionDate <= allList[1].transactionDate).toBe(true);
 
-  jest.useRealTimers();
+  nowValue = new Date("2024-01-03T00:00:00Z");
 });

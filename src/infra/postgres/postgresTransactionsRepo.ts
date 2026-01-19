@@ -1,0 +1,86 @@
+import {
+  CreateTransactionInput,
+  Transaction,
+  TransactionsRepository
+} from "../../modules/transactions/transactions.repository";
+import { getPool } from "./pool";
+
+export class PostgresTransactionsRepository implements TransactionsRepository {
+  async create(input: CreateTransactionInput): Promise<Transaction> {
+    const pool = getPool();
+    const result = await pool.query(
+      `
+      INSERT INTO transactions (
+        transaction_id,
+        account_id,
+        value_cents,
+        transaction_date
+      )
+      VALUES (
+        gen_random_uuid(),
+        $1, $2, $3
+      )
+      RETURNING
+        transaction_id AS "transactionId",
+        account_id AS "accountId",
+        value_cents AS "valueCents",
+        transaction_date AS "transactionDate";
+      `,
+      [input.accountId, input.valueCents, input.transactionDate]
+    );
+
+    return result.rows[0] as Transaction;
+  }
+
+  async listByAccount(
+    accountId: string,
+    from?: string,
+    to?: string
+  ): Promise<Transaction[]> {
+    const pool = getPool();
+    const params: Array<string> = [accountId];
+    const conditions: string[] = ["account_id = $1"];
+
+    if (from) {
+      params.push(from);
+      conditions.push(`transaction_date::date >= $${params.length}`);
+    }
+
+    if (to) {
+      params.push(to);
+      conditions.push(`transaction_date::date <= $${params.length}`);
+    }
+
+    const result = await pool.query(
+      `
+      SELECT
+        transaction_id AS "transactionId",
+        account_id AS "accountId",
+        value_cents AS "valueCents",
+        transaction_date AS "transactionDate"
+      FROM transactions
+      WHERE ${conditions.join(" AND ")}
+      ORDER BY transaction_date ASC;
+      `,
+      params
+    );
+
+    return result.rows as Transaction[];
+  }
+
+  async sumWithdrawalsForDay(accountId: string, day: string): Promise<number> {
+    const pool = getPool();
+    const result = await pool.query(
+      `
+      SELECT COALESCE(SUM(ABS(value_cents)), 0) AS total
+      FROM transactions
+      WHERE account_id = $1
+        AND value_cents < 0
+        AND transaction_date::date = $2::date;
+      `,
+      [accountId, day]
+    );
+
+    return Number(result.rows[0]?.total ?? 0);
+  }
+}
