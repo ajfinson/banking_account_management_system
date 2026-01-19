@@ -79,16 +79,19 @@ describeMaybe("postgres integration", () => {
     const today = new Date().toISOString().slice(0, 10);
     const statementRes = await app.inject({
       method: "GET",
-      url: `/accounts/${accountId}/statement?from=${today}&to=${today}`
+      url: `/accounts/${accountId}/statement?from=${today}&to=${today}&limit=1&offset=0`
     });
 
     expect(statementRes.statusCode).toBe(200);
     const statement = statementRes.json();
-    expect(statement.openingBalance).toBe(10000);
-    expect(statement.totalIn).toBe(1000);
+    expect(statement.openingBalance).toBe(0);
+    expect(statement.totalIn).toBe(11000);
     expect(statement.totalOut).toBe(600);
     expect(statement.closingBalance).toBe(10400);
-    expect(statement.transactions).toHaveLength(2);
+    expect(statement.transactions).toHaveLength(1);
+    expect(statement.totalCount).toBeGreaterThanOrEqual(3);
+    expect(statement.limit).toBe(1);
+    expect(statement.offset).toBe(0);
   });
 
   test("invalid personId returns not found", async () => {

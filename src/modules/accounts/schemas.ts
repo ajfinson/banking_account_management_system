@@ -1,14 +1,32 @@
 import { z } from "zod";
 
+const MAX_CENTS = 2_000_000_000;
+
 export const createAccountBodySchema = z.object({
   personId: z.string().min(1),
-  dailyWithdrawalLimitCents: z.number().int().nonnegative(),
+  dailyWithdrawalLimitCents: z
+    .number()
+    .int()
+    .nonnegative()
+    .max(MAX_CENTS)
+    .refine(Number.isSafeInteger),
   accountType: z.enum(["checking", "savings", "investment"]),
-  initialBalanceCents: z.number().int().nonnegative().optional()
+  initialBalanceCents: z
+    .number()
+    .int()
+    .nonnegative()
+    .max(MAX_CENTS)
+    .refine(Number.isSafeInteger)
+    .optional()
 });
 
 export const amountBodySchema = z.object({
-  amountCents: z.number().int().positive()
+  amountCents: z
+    .number()
+    .int()
+    .positive()
+    .max(MAX_CENTS)
+    .refine(Number.isSafeInteger)
 });
 
 export const accountParamsSchema = z.object({

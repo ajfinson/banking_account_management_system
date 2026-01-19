@@ -16,5 +16,11 @@ export interface TransactionsRepository {
     limit?: number,
     offset?: number
   ): Promise<Transaction[]>;
+  countByAccount(accountId: string, from?: string, to?: string): Promise<number>;
+  sumByAccountRange(
+    accountId: string,
+    from?: string,
+    to?: string
+  ): Promise<{ totalIn: number; totalOut: number; totalNet: number }>;
   sumWithdrawalsForDay(accountId: string, day: string): Promise<number>;
 }

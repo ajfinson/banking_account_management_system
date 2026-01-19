@@ -2,6 +2,12 @@
 
 Fastify + TypeScript REST API for banking accounts using clean architecture and in-memory repositories (swappable later).
 
+## Prerequisites
+
+- Node.js 18+ (recommended)
+- npm 9+
+- Postgres 14+ (only if using `REPO_PROVIDER=postgres`)
+
 ## Run server
 
 1. Install dependencies: `npm install`
@@ -14,7 +20,15 @@ The server listens on `http://localhost:3000` by default.
 - Swagger UI: http://localhost:3000/docs
 - OpenAPI JSON: http://localhost:3000/docs/json
 - Health check: http://localhost:3000/health
+- DB health check: http://localhost:3000/health/db (only in Postgres mode)
 - Every response includes an `x-request-id` header for traceability.
+
+### Rate limiting
+
+Default limit is 100 requests per minute. Configure via:
+
+- `RATE_LIMIT_MAX`
+- `RATE_LIMIT_WINDOW_MS`
 
 ### Using Postgres
 
@@ -30,11 +44,23 @@ REPO_PROVIDER=postgres
 
 Then run `npm run dev`.
 
+### Postgres setup helpers (optional)
+
+- Use pgAdmin Query Tool to execute [scripts/schema.sql](scripts/schema.sql) and [scripts/seed.sql](scripts/seed.sql).
+- Or use psql:
+
+```
+psql -U postgres -d bank -f scripts/schema.sql
+psql -U postgres -d bank -f scripts/seed.sql
+```
+
 ## Run tests
 
 `npm test`
 
 ## API endpoints
+
+All monetary values are **integer cents**.
 
 ### Create account
 
@@ -129,6 +155,7 @@ Errors:
 Errors:
 
 - 404 `NOT_FOUND`
+- 409 `ALREADY_BLOCKED`
 
 ### Unblock account
 
@@ -137,6 +164,7 @@ Errors:
 Errors:
 
 - 404 `NOT_FOUND`
+- 409 `ALREADY_UNBLOCKED`
 
 ### Account statement
 
@@ -155,6 +183,10 @@ Example response:
   "closingBalance": 10400,
   "totalIn": 1000,
   "totalOut": 600,
+  "totalCount": 2,
+  "limit": 10,
+  "offset": 0,
+  "hasMore": false,
   "transactions": [
     {
       "transactionId": "...",
@@ -175,4 +207,10 @@ Errors:
 - **Cents**: all monetary values are stored in cents to avoid floating point errors.
 - **Negative transactions**: withdrawals create a transaction with a negative `valueCents`.
 - **Mutex**: deposit/withdraw are serialized per account with an in-memory mutex to guarantee atomicity.
+- **Daily limit**: enforced per UTC calendar day (00:00–23:59 UTC).
 - **Repository pattern**: `AccountsRepository` and `TransactionsRepository` are interfaces so the storage layer can be swapped later.
+
+## Scaling notes
+
+- In-memory mode is **single-process only** and **not durable**.
+- Postgres mode supports multi-instance deployments with transactional safety.

@@ -23,6 +23,21 @@ export const openapiDocument = {
         }
       }
     },
+    "/health/db": {
+      get: {
+        summary: "Database health check",
+        responses: {
+          "200": {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/Health" }
+              }
+            }
+          }
+        }
+      }
+    },
     "/accounts": {
       post: {
         summary: "Create account",
@@ -164,6 +179,10 @@ export const openapiDocument = {
                     closingBalance: { type: "integer" },
                     totalIn: { type: "integer" },
                     totalOut: { type: "integer" },
+                    totalCount: { type: "integer" },
+                    limit: { type: "integer" },
+                    offset: { type: "integer" },
+                    hasMore: { type: "boolean" },
                     transactions: {
                       type: "array",
                       items: { $ref: "#/components/schemas/Transaction" }
@@ -174,6 +193,10 @@ export const openapiDocument = {
                     "closingBalance",
                     "totalIn",
                     "totalOut",
+                    "totalCount",
+                    "limit",
+                    "offset",
+                    "hasMore",
                     "transactions"
                   ]
                 }
@@ -271,15 +294,19 @@ export const openapiDocument = {
         type: "object",
         properties: {
           personId: { type: "string" },
-          dailyWithdrawalLimitCents: { type: "integer", minimum: 0 },
+          dailyWithdrawalLimitCents: {
+            type: "integer",
+            minimum: 0,
+            maximum: 2000000000
+          },
           accountType: { type: "string" },
-          initialBalanceCents: { type: "integer", minimum: 0 }
+          initialBalanceCents: { type: "integer", minimum: 0, maximum: 2000000000 }
         },
         required: ["personId", "dailyWithdrawalLimitCents", "accountType"]
       },
       AmountBody: {
         type: "object",
-        properties: { amountCents: { type: "integer" } },
+        properties: { amountCents: { type: "integer", minimum: 1, maximum: 2000000000 } },
         required: ["amountCents"]
       }
     }

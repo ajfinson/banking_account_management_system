@@ -73,6 +73,24 @@ test("blocked account cannot deposit", async () => {
   expect(depositRes.json().error).toBe("ACCOUNT_BLOCKED");
 });
 
+test("block is not allowed when already blocked", async () => {
+  const createRes = await createAccount();
+  const account = createRes.json();
+
+  await app.inject({
+    method: "POST",
+    url: `/accounts/${account.accountId}/block`
+  });
+
+  const secondBlock = await app.inject({
+    method: "POST",
+    url: `/accounts/${account.accountId}/block`
+  });
+
+  expect(secondBlock.statusCode).toBe(409);
+  expect(secondBlock.json().error).toBe("ALREADY_BLOCKED");
+});
+
 test("unblock allows deposits again", async () => {
   const createRes = await createAccount();
   const account = createRes.json();
@@ -94,6 +112,38 @@ test("unblock allows deposits again", async () => {
     payload: { amountCents: 100 }
   });
   expect(depositRes.statusCode).toBe(200);
+});
+
+test("unblock is not allowed when already unblocked", async () => {
+  const createRes = await createAccount();
+  const account = createRes.json();
+
+  const unblockRes = await app.inject({
+    method: "POST",
+    url: `/accounts/${account.accountId}/unblock`
+  });
+
+  expect(unblockRes.statusCode).toBe(409);
+  expect(unblockRes.json().error).toBe("ALREADY_UNBLOCKED");
+});
+
+test("blocked account cannot withdraw", async () => {
+  const createRes = await createAccount();
+  const account = createRes.json();
+
+  await app.inject({
+    method: "POST",
+    url: `/accounts/${account.accountId}/block`
+  });
+
+  const withdrawRes = await app.inject({
+    method: "POST",
+    url: `/accounts/${account.accountId}/withdraw`,
+    payload: { amountCents: 100 }
+  });
+
+  expect(withdrawRes.statusCode).toBe(409);
+  expect(withdrawRes.json().error).toBe("ACCOUNT_BLOCKED");
 });
 
 test("daily limit enforced", async () => {
@@ -226,8 +276,10 @@ test("statement filter is inclusive and ordered", async () => {
   });
   expect(statementDay1.statusCode).toBe(200);
   const day1Summary = statementDay1.json();
-  expect(day1Summary.transactions).toHaveLength(1);
-  expect(day1Summary.transactions[0].valueCents).toBe(-100);
+  expect(day1Summary.transactions).toHaveLength(2);
+  expect(day1Summary.totalIn).toBe(10000);
+  expect(day1Summary.totalOut).toBe(100);
+  expect(day1Summary.openingBalance).toBe(0);
 
   const statementAll = await app.inject({
     method: "GET",
@@ -235,11 +287,79 @@ test("statement filter is inclusive and ordered", async () => {
   });
   expect(statementAll.statusCode).toBe(200);
   const allSummary = statementAll.json();
-  expect(allSummary.transactions).toHaveLength(2);
+  expect(allSummary.transactions).toHaveLength(3);
   expect(
     allSummary.transactions[0].transactionDate <=
       allSummary.transactions[1].transactionDate
   ).toBe(true);
 
   nowValue = new Date("2024-01-03T00:00:00Z");
+});
+
+test("initial balance is recorded as a transaction", async () => {
+  nowValue = new Date("2024-02-01T10:00:00Z");
+  const createRes = await createAccount({
+    dailyWithdrawalLimitCents: 5000,
+    initialBalanceCents: 2500
+  });
+  const account = createRes.json();
+
+  const statementRes = await app.inject({
+    method: "GET",
+    url: `/accounts/${account.accountId}/statement?from=2024-02-01&to=2024-02-01`
+  });
+
+  expect(statementRes.statusCode).toBe(200);
+  const summary = statementRes.json();
+  expect(summary.transactions).toHaveLength(1);
+  expect(summary.transactions[0].valueCents).toBe(2500);
+  expect(summary.totalIn).toBe(2500);
+  expect(summary.closingBalance).toBe(2500);
+  expect(summary.openingBalance).toBe(0);
+});
+
+test("statement pagination returns metadata and slices results", async () => {
+  nowValue = new Date("2024-03-01T10:00:00Z");
+  const createRes = await createAccount({
+    dailyWithdrawalLimitCents: 10000,
+    initialBalanceCents: 1000
+  });
+  const account = createRes.json();
+
+  await app.inject({
+    method: "POST",
+    url: `/accounts/${account.accountId}/deposit`,
+    payload: { amountCents: 100 }
+  });
+  await app.inject({
+    method: "POST",
+    url: `/accounts/${account.accountId}/deposit`,
+    payload: { amountCents: 200 }
+  });
+  await app.inject({
+    method: "POST",
+    url: `/accounts/${account.accountId}/withdraw`,
+    payload: { amountCents: 50 }
+  });
+
+  const day = "2024-03-01";
+  const page1 = await app.inject({
+    method: "GET",
+    url: `/accounts/${account.accountId}/statement?from=${day}&to=${day}&limit=2&offset=0`
+  });
+  expect(page1.statusCode).toBe(200);
+  const page1Json = page1.json();
+  expect(page1Json.transactions).toHaveLength(2);
+  expect(page1Json.totalCount).toBeGreaterThanOrEqual(4);
+  expect(page1Json.limit).toBe(2);
+  expect(page1Json.offset).toBe(0);
+  expect(typeof page1Json.hasMore).toBe("boolean");
+
+  const page2 = await app.inject({
+    method: "GET",
+    url: `/accounts/${account.accountId}/statement?from=${day}&to=${day}&limit=2&offset=2`
+  });
+  expect(page2.statusCode).toBe(200);
+  const page2Json = page2.json();
+  expect(page2Json.offset).toBe(2);
 });

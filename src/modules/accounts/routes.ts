@@ -273,6 +273,10 @@ export function registerAccountsRoutesWithSchemas(
               closingBalance: { type: "integer" },
               totalIn: { type: "integer" },
               totalOut: { type: "integer" },
+              totalCount: { type: "integer" },
+              limit: { type: "integer" },
+              offset: { type: "integer" },
+              hasMore: { type: "boolean" },
               transactions: {
                 type: "array",
                 items: txSchema
@@ -283,6 +287,10 @@ export function registerAccountsRoutesWithSchemas(
               "closingBalance",
               "totalIn",
               "totalOut",
+              "totalCount",
+              "limit",
+              "offset",
+              "hasMore",
               "transactions"
             ]
           }

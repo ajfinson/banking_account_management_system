@@ -26,6 +26,18 @@ export class AccountBlockedError extends AppError {
   }
 }
 
+export class AlreadyBlockedError extends AppError {
+  constructor(message = "Account is already blocked") {
+    super("ALREADY_BLOCKED", 409, message);
+  }
+}
+
+export class AlreadyUnblockedError extends AppError {
+  constructor(message = "Account is already unblocked") {
+    super("ALREADY_UNBLOCKED", 409, message);
+  }
+}
+
 export class InvalidAmountError extends AppError {
   constructor(message = "Amount must be greater than zero") {
     super("INVALID_AMOUNT", 400, message);
