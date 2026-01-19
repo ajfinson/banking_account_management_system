@@ -3,47 +3,55 @@ import {
   AccountsRepository,
   CreateAccountInput
 } from "../../modules/accounts/repository";
-import { NotFoundError } from "../../common/errors";
+import { NotFoundError, PersonNotFoundError } from "../../common/errors";
 import { getPool } from "./pool";
 
 export class PostgresAccountsRepository implements AccountsRepository {
   async create(input: CreateAccountInput): Promise<Account> {
     const pool = getPool();
-    const result = await pool.query(
-      `
-      INSERT INTO account (
-        account_id,
-        person_id,
-        balance_cents,
-        daily_withdrawal_limit_cents,
-        active_flag,
-        account_type,
-        create_date
-      )
-      VALUES (
-        gen_random_uuid(),
-        $1, $2, $3, $4, $5, $6
-      )
-      RETURNING
-        account_id AS "accountId",
-        person_id AS "personId",
-        balance_cents AS "balanceCents",
-        daily_withdrawal_limit_cents AS "dailyWithdrawalLimitCents",
-        active_flag AS "activeFlag",
-        account_type AS "accountType",
-        create_date AS "createDate";
-      `,
-      [
-        input.personId,
-        input.balanceCents,
-        input.dailyWithdrawalLimitCents,
-        input.activeFlag,
-        input.accountType,
-        input.createDate
-      ]
-    );
+    try {
+      const result = await pool.query(
+        `
+        INSERT INTO account (
+          account_id,
+          person_id,
+          balance_cents,
+          daily_withdrawal_limit_cents,
+          active_flag,
+          account_type,
+          create_date
+        )
+        VALUES (
+          gen_random_uuid(),
+          $1, $2, $3, $4, $5, $6
+        )
+        RETURNING
+          account_id AS "accountId",
+          person_id AS "personId",
+          balance_cents AS "balanceCents",
+          daily_withdrawal_limit_cents AS "dailyWithdrawalLimitCents",
+          active_flag AS "activeFlag",
+          account_type AS "accountType",
+          create_date AS "createDate";
+        `,
+        [
+          input.personId,
+          input.balanceCents,
+          input.dailyWithdrawalLimitCents,
+          input.activeFlag,
+          input.accountType,
+          input.createDate
+        ]
+      );
 
-    return result.rows[0] as Account;
+      return result.rows[0] as Account;
+    } catch (error) {
+      const pgError = error as { code?: string };
+      if (pgError.code === "23503") {
+        throw new PersonNotFoundError();
+      }
+      throw error;
+    }
   }
 
   async getById(accountId: string): Promise<Account | null> {

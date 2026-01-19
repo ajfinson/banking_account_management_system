@@ -49,6 +49,16 @@ export function buildApp(options: ContainerOptions = {}): FastifyInstance {
     }
 
     if (error instanceof ZodError) {
+      const hasAmountIssue = error.issues.some((issue) =>
+        issue.path.includes("amountCents")
+      );
+      if (hasAmountIssue) {
+        return reply.status(400).send({
+          error: "INVALID_AMOUNT",
+          message: "Amount must be greater than zero"
+        });
+      }
+
       return reply.status(400).send({
         error: "INVALID_REQUEST",
         message: error.message

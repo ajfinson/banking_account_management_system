@@ -34,9 +34,18 @@ Then run `npm run dev`.
 
 `npm test`
 
-## Example curl
+## API endpoints
 
-Create account (curl):
+### Create account
+
+- **POST /accounts**
+- Body:
+  - `personId` (string, required)
+  - `dailyWithdrawalLimitCents` (integer ≥ 0, required)
+  - `accountType` (enum: `checking` | `savings` | `investment`, required)
+  - `initialBalanceCents` (integer ≥ 0, optional)
+
+Example request:
 
 ```
 curl -X POST http://localhost:3000/accounts \
@@ -44,57 +53,122 @@ curl -X POST http://localhost:3000/accounts \
   -d '{"personId":"person-1","dailyWithdrawalLimitCents":5000,"accountType":"checking","initialBalanceCents":10000}'
 ```
 
-Create account (PowerShell):
+Example response:
 
 ```
-Invoke-WebRequest -Method Post -Uri http://localhost:3000/accounts `
-  -ContentType "application/json" `
-  -Body '{"personId":"person-1","dailyWithdrawalLimitCents":5000,"accountType":"checking","initialBalanceCents":10000}'
+{
+  "accountId": "...",
+  "personId": "person-1",
+  "balanceCents": 10000,
+  "dailyWithdrawalLimitCents": 5000,
+  "activeFlag": true,
+  "accountType": "checking",
+  "createDate": "2024-01-01T10:00:00.000Z"
+}
 ```
 
-Deposit (curl):
+Errors:
+
+- 400 `INVALID_REQUEST`
+- 404 `PERSON_NOT_FOUND`
+
+### Get balance
+
+- **GET /accounts/:id/balance**
+
+Example response:
 
 ```
-curl -X POST http://localhost:3000/accounts/<id>/deposit \
-  -H "Content-Type: application/json" \
-  -d '{"amountCents":2500}'
+{ "balanceCents": 10400 }
 ```
 
-Deposit (PowerShell):
+Errors:
+
+- 404 `NOT_FOUND`
+
+### Deposit
+
+- **POST /accounts/:id/deposit**
+- Body: `amountCents` (integer > 0)
+
+Example response:
 
 ```
-Invoke-WebRequest -Method Post -Uri http://localhost:3000/accounts/<id>/deposit `
-  -ContentType "application/json" `
-  -Body '{"amountCents":2500}'
+{ "balanceCents": 11000, "transactionId": "..." }
 ```
 
-Withdraw (curl):
+Errors:
+
+- 400 `INVALID_AMOUNT`
+- 404 `NOT_FOUND`
+- 409 `ACCOUNT_BLOCKED`
+
+### Withdraw
+
+- **POST /accounts/:id/withdraw**
+- Body: `amountCents` (integer > 0)
+
+Example response:
 
 ```
-curl -X POST http://localhost:3000/accounts/<id>/withdraw \
-  -H "Content-Type: application/json" \
-  -d '{"amountCents":1500}'
+{ "balanceCents": 9400, "transactionId": "..." }
 ```
 
-Withdraw (PowerShell):
+Errors:
+
+- 400 `INVALID_AMOUNT`
+- 404 `NOT_FOUND`
+- 409 `ACCOUNT_BLOCKED`
+- 409 `INSUFFICIENT_FUNDS`
+- 409 `DAILY_LIMIT_EXCEEDED`
+
+### Block account
+
+- **POST /accounts/:id/block**
+
+Errors:
+
+- 404 `NOT_FOUND`
+
+### Unblock account
+
+- **POST /accounts/:id/unblock**
+
+Errors:
+
+- 404 `NOT_FOUND`
+
+### Account statement
+
+- **GET /accounts/:id/statement**
+- Query params (all optional):
+  - `from` (YYYY-MM-DD)
+  - `to` (YYYY-MM-DD)
+  - `limit` (integer > 0)
+  - `offset` (integer ≥ 0)
+
+Example response:
 
 ```
-Invoke-WebRequest -Method Post -Uri http://localhost:3000/accounts/<id>/withdraw `
-  -ContentType "application/json" `
-  -Body '{"amountCents":1500}'
+{
+  "openingBalance": 10000,
+  "closingBalance": 10400,
+  "totalIn": 1000,
+  "totalOut": 600,
+  "transactions": [
+    {
+      "transactionId": "...",
+      "accountId": "...",
+      "valueCents": 1000,
+      "transactionDate": "2024-01-02T10:00:00.000Z"
+    }
+  ]
+}
 ```
 
-Statement (curl):
+Errors:
 
-```
-curl "http://localhost:3000/accounts/<id>/statement?from=2024-01-01&to=2024-01-31"
-```
-
-Statement (PowerShell):
-
-```
-Invoke-WebRequest -Method Get -Uri "http://localhost:3000/accounts/<id>/statement?from=2024-01-01&to=2024-01-31"
-```
+- 404 `NOT_FOUND`
 
 ## Design notes
 

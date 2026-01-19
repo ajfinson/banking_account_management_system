@@ -17,9 +17,11 @@ export class MemoryTransactionsRepository implements TransactionsRepository {
   async listByAccount(
     accountId: string,
     from?: string,
-    to?: string
+    to?: string,
+    limit?: number,
+    offset?: number
   ): Promise<Transaction[]> {
-    return this.transactions
+    const filtered = this.transactions
       .filter((tx) => tx.accountId === accountId)
       .filter((tx) => {
         const day = tx.transactionDate.slice(0, 10);
@@ -32,6 +34,12 @@ export class MemoryTransactionsRepository implements TransactionsRepository {
         return true;
       })
       .sort((a, b) => a.transactionDate.localeCompare(b.transactionDate));
+
+    const start = offset ?? 0;
+    if (limit === undefined) {
+      return filtered.slice(start);
+    }
+    return filtered.slice(start, start + limit);
   }
 
   async sumWithdrawalsForDay(accountId: string, day: string): Promise<number> {

@@ -227,6 +227,26 @@ export function registerAccountsRoutesWithSchemas(
     }
   );
 
+  app.post(
+    "/accounts/:id/unblock",
+    {
+      schema: {
+        tags: ["accounts"],
+        summary: "Unblock account",
+        params: {
+          type: "object",
+          properties: { id: { type: "string" } },
+          required: ["id"]
+        },
+        response: { 200: accountSchema }
+      }
+    },
+    async (request) => {
+      const params = accountParamsSchema.parse(request.params);
+      return controller.unblockAccount(params.id);
+    }
+  );
+
   app.get(
     "/accounts/:id/statement",
     {
@@ -247,8 +267,24 @@ export function registerAccountsRoutesWithSchemas(
         },
         response: {
           200: {
-            type: "array",
-            items: txSchema
+            type: "object",
+            properties: {
+              openingBalance: { type: "integer" },
+              closingBalance: { type: "integer" },
+              totalIn: { type: "integer" },
+              totalOut: { type: "integer" },
+              transactions: {
+                type: "array",
+                items: txSchema
+              }
+            },
+            required: [
+              "openingBalance",
+              "closingBalance",
+              "totalIn",
+              "totalOut",
+              "transactions"
+            ]
           }
         }
       }
@@ -256,7 +292,13 @@ export function registerAccountsRoutesWithSchemas(
     async (request) => {
       const params = accountParamsSchema.parse(request.params);
       const query = statementQuerySchema.parse(request.query);
-      return controller.statement(params.id, query.from, query.to);
+      return controller.statement(
+        params.id,
+        query.from,
+        query.to,
+        query.limit,
+        query.offset
+      );
     }
   );
 }

@@ -12,7 +12,9 @@ export interface TransactionsRepository {
   listByAccount(
     accountId: string,
     from?: string,
-    to?: string
+    to?: string,
+    limit?: number,
+    offset?: number
   ): Promise<Transaction[]>;
   sumWithdrawalsForDay(accountId: string, day: string): Promise<number>;
 }

@@ -14,6 +14,12 @@ export class NotFoundError extends AppError {
   }
 }
 
+export class PersonNotFoundError extends AppError {
+  constructor(message = "Person not found") {
+    super("PERSON_NOT_FOUND", 404, message);
+  }
+}
+
 export class AccountBlockedError extends AppError {
   constructor(message = "Account is blocked") {
     super("ACCOUNT_BLOCKED", 409, message);

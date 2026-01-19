@@ -23,7 +23,17 @@ export class AccountsController {
     return this.service.blockAccount(accountId);
   }
 
-  statement(accountId: string, from?: string, to?: string) {
-    return this.service.statement(accountId, from, to);
+  unblockAccount(accountId: string) {
+    return this.service.unblockAccount(accountId);
+  }
+
+  statement(
+    accountId: string,
+    from?: string,
+    to?: string,
+    limit?: number,
+    offset?: number
+  ) {
+    return this.service.statement(accountId, from, to, limit, offset);
   }
 }

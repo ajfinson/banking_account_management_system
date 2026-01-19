@@ -126,13 +126,31 @@ export const openapiDocument = {
         }
       }
     },
+    "/accounts/{id}/unblock": {
+      post: {
+        summary: "Unblock account",
+        parameters: [{ $ref: "#/components/parameters/AccountId" }],
+        responses: {
+          "200": {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/Account" }
+              }
+            }
+          }
+        }
+      }
+    },
     "/accounts/{id}/statement": {
       get: {
         summary: "Get statement",
         parameters: [
           { $ref: "#/components/parameters/AccountId" },
           { $ref: "#/components/parameters/From" },
-          { $ref: "#/components/parameters/To" }
+          { $ref: "#/components/parameters/To" },
+          { $ref: "#/components/parameters/Limit" },
+          { $ref: "#/components/parameters/Offset" }
         ],
         responses: {
           "200": {
@@ -140,8 +158,24 @@ export const openapiDocument = {
             content: {
               "application/json": {
                 schema: {
-                  type: "array",
-                  items: { $ref: "#/components/schemas/Transaction" }
+                  type: "object",
+                  properties: {
+                    openingBalance: { type: "integer" },
+                    closingBalance: { type: "integer" },
+                    totalIn: { type: "integer" },
+                    totalOut: { type: "integer" },
+                    transactions: {
+                      type: "array",
+                      items: { $ref: "#/components/schemas/Transaction" }
+                    }
+                  },
+                  required: [
+                    "openingBalance",
+                    "closingBalance",
+                    "totalIn",
+                    "totalOut",
+                    "transactions"
+                  ]
                 }
               }
             }
@@ -169,6 +203,18 @@ export const openapiDocument = {
         in: "query",
         required: false,
         schema: { type: "string" }
+      },
+      Limit: {
+        name: "limit",
+        in: "query",
+        required: false,
+        schema: { type: "integer", minimum: 1 }
+      },
+      Offset: {
+        name: "offset",
+        in: "query",
+        required: false,
+        schema: { type: "integer", minimum: 0 }
       }
     },
     schemas: {

@@ -35,7 +35,9 @@ export class PostgresTransactionsRepository implements TransactionsRepository {
   async listByAccount(
     accountId: string,
     from?: string,
-    to?: string
+    to?: string,
+    limit?: number,
+    offset?: number
   ): Promise<Transaction[]> {
     const pool = getPool();
     const params: Array<string> = [accountId];
@@ -51,6 +53,16 @@ export class PostgresTransactionsRepository implements TransactionsRepository {
       conditions.push(`transaction_date::date <= $${params.length}`);
     }
 
+    let limitOffset = "";
+    if (limit !== undefined) {
+      params.push(String(limit));
+      limitOffset += ` LIMIT $${params.length}`;
+    }
+    if (offset !== undefined) {
+      params.push(String(offset));
+      limitOffset += ` OFFSET $${params.length}`;
+    }
+
     const result = await pool.query(
       `
       SELECT
@@ -60,7 +72,7 @@ export class PostgresTransactionsRepository implements TransactionsRepository {
         transaction_date AS "transactionDate"
       FROM transactions
       WHERE ${conditions.join(" AND ")}
-      ORDER BY transaction_date ASC;
+      ORDER BY transaction_date ASC${limitOffset};
       `,
       params
     );

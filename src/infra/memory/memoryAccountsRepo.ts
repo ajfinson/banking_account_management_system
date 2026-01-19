@@ -4,12 +4,21 @@ import {
   AccountsRepository,
   CreateAccountInput
 } from "../../modules/accounts/repository";
-import { NotFoundError } from "../../common/errors";
+import { NotFoundError, PersonNotFoundError } from "../../common/errors";
 
 export class MemoryAccountsRepository implements AccountsRepository {
   private readonly accounts = new Map<string, Account>();
+  private readonly validPersonIds = new Set([
+    "person-1",
+    "person-2",
+    "person-3",
+    "person-4"
+  ]);
 
   async create(input: CreateAccountInput): Promise<Account> {
+    if (!this.validPersonIds.has(input.personId)) {
+      throw new PersonNotFoundError();
+    }
     const account: Account = {
       ...input,
       accountId: randomUUID()
