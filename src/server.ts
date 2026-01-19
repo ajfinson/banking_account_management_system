@@ -7,7 +7,7 @@ const host = process.env.HOST ?? "0.0.0.0";
 
 app
   .listen({ port, host })
-  .catch((error) => {
+  .catch((error: unknown) => {
     app.log.error(error);
     process.exit(1);
   });

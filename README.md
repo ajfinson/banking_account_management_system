@@ -9,6 +9,13 @@ Fastify + TypeScript REST API for banking accounts using clean architecture and 
 
 The server listens on `http://localhost:3000` by default.
 
+### API docs and health
+
+- Swagger UI: http://localhost:3000/docs
+- OpenAPI JSON: http://localhost:3000/docs/json
+- Health check: http://localhost:3000/health
+- Every response includes an `x-request-id` header for traceability.
+
 ### Using Postgres
 
 1. Create the database and run [scripts/schema.sql](scripts/schema.sql).
