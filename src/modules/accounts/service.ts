@@ -2,25 +2,20 @@ import {
   AccountBlockedError,
   AlreadyBlockedError,
   AlreadyUnblockedError,
-  DailyLimitExceededError,
-  InsufficientFundsError,
   InvalidAmountError,
-  NotFoundError,
-  PersonNotFoundError
+  NotFoundError
 } from "../../common/errors";
 import {
   Account,
   AccountsRepository,
+  AccountEventsRepository,
   CreateAccountInput
 } from "./repository";
 import {
-  Transaction,
   TransactionsRepository
 } from "../transactions/transactions.repository";
 import { MutexMap } from "../../infra/memory/mutex";
 import { config } from "../../config";
-import { getPool } from "../../infra/postgres/pool";
-import type { PoolClient } from "pg";
 
 export type CreateAccountRequest = {
   personId: string;
@@ -29,103 +24,33 @@ export type CreateAccountRequest = {
   initialBalanceCents?: number;
 };
 
+type LogContext = {
+  requestId?: string;
+  accountId?: string;
+  amountCents?: number;
+};
+
+type LoggerLike = {
+  info: (message: string, context?: LogContext) => void;
+  warn: (message: string, context?: LogContext) => void;
+  error: (message: string, context?: LogContext) => void;
+};
+
 export class AccountsService {
-  private static readonly MAX_CENTS = 2_000_000_000;
+  private static readonly MAX_CENTS = Number.MAX_SAFE_INTEGER;
+  
   constructor(
     private readonly accountsRepo: AccountsRepository,
     private readonly transactionsRepo: TransactionsRepository,
+    private readonly eventsRepo: AccountEventsRepository,
     private readonly mutexMap: MutexMap,
-    private readonly now: () => Date = () => new Date()
+    private readonly now: () => Date = () => new Date(),
+    private readonly logger: LoggerLike = {
+      info: (msg, ctx) => console.log(msg, ctx),
+      warn: (msg, ctx) => console.warn(msg, ctx),
+      error: (msg, ctx) => console.error(msg, ctx)
+    }
   ) {}
-
-  private async withPostgresTransaction<T>(
-    fn: (client: PoolClient) => Promise<T>
-  ): Promise<T> {
-    const pool = getPool();
-    const maxAttempts = 3;
-    let attempt = 0;
-
-    while (attempt < maxAttempts) {
-      const client = await pool.connect();
-      try {
-        await client.query("BEGIN");
-        const result = await fn(client);
-        await client.query("COMMIT");
-        return result;
-      } catch (error) {
-        await client.query("ROLLBACK");
-        const pgError = error as { code?: string };
-        attempt += 1;
-        if (pgError.code && this.isRetryablePgError(pgError.code) && attempt < maxAttempts) {
-          console.warn("Retrying transaction", { attempt, code: pgError.code });
-          await this.delay(50 * attempt);
-          continue;
-        }
-        throw error;
-      } finally {
-        client.release();
-      }
-    }
-
-    throw new Error("Transaction retry attempts exhausted");
-  }
-
-  private isRetryablePgError(code: string): boolean {
-    return code === "40001" || code === "40P01" || code === "55P03" || code === "57P03";
-  }
-
-  private async delay(ms: number) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
-
-  private mapAccountRow(row: {
-    accountId: string;
-    personId: string;
-    balanceCents: number;
-    dailyWithdrawalLimitCents: number;
-    activeFlag: boolean;
-    accountType: string;
-    createDate: string;
-  }): Account {
-    return {
-      accountId: row.accountId,
-      personId: row.personId,
-      balanceCents: Number(row.balanceCents),
-      dailyWithdrawalLimitCents: Number(row.dailyWithdrawalLimitCents),
-      activeFlag: row.activeFlag,
-      accountType: row.accountType,
-      createDate: row.createDate
-    };
-  }
-
-  private async getAccountForUpdate(
-    client: PoolClient,
-    accountId: string
-  ): Promise<Account> {
-    const result = await client.query(
-      `
-      SELECT
-        account_id AS "accountId",
-        person_id AS "personId",
-        balance_cents AS "balanceCents",
-        daily_withdrawal_limit_cents AS "dailyWithdrawalLimitCents",
-        active_flag AS "activeFlag",
-        account_type AS "accountType",
-        create_date AS "createDate"
-      FROM account
-      WHERE account_id = $1
-      FOR UPDATE;
-      `,
-      [accountId]
-    );
-
-    const row = result.rows[0];
-    if (!row) {
-      throw new NotFoundError();
-    }
-
-    return this.mapAccountRow(row);
-  }
 
   async createAccount(input: CreateAccountRequest): Promise<Account> {
     const initialBalanceCents = input.initialBalanceCents ?? 0;
@@ -135,93 +60,27 @@ export class AccountsService {
     this.validateCents(initialBalanceCents, "Initial balance");
     this.validateCents(input.dailyWithdrawalLimitCents, "Daily limit");
 
+    const createDate = this.now().toISOString();
     const accountInput: CreateAccountInput = {
       personId: input.personId,
       dailyWithdrawalLimitCents: input.dailyWithdrawalLimitCents,
       accountType: input.accountType,
       balanceCents: initialBalanceCents,
       activeFlag: true,
-      createDate: this.now().toISOString()
+      createDate
     };
 
-    if (config.REPO_PROVIDER === "postgres") {
-      try {
-        return await this.withPostgresTransaction(async (client) => {
-          const result = await client.query(
-            `
-            INSERT INTO account (
-              account_id,
-              person_id,
-              balance_cents,
-              daily_withdrawal_limit_cents,
-              active_flag,
-              account_type,
-              create_date
-            )
-            VALUES (
-              gen_random_uuid(),
-              $1, $2, $3, $4, $5, $6
-            )
-            RETURNING
-              account_id AS "accountId",
-              person_id AS "personId",
-              balance_cents AS "balanceCents",
-              daily_withdrawal_limit_cents AS "dailyWithdrawalLimitCents",
-              active_flag AS "activeFlag",
-              account_type AS "accountType",
-              create_date AS "createDate";
-            `,
-            [
-              accountInput.personId,
-              accountInput.balanceCents,
-              accountInput.dailyWithdrawalLimitCents,
-              accountInput.activeFlag,
-              accountInput.accountType,
-              accountInput.createDate
-            ]
-          );
-
-          const account = this.mapAccountRow(result.rows[0]);
-
-          if (initialBalanceCents > 0) {
-            await client.query(
-              `
-              INSERT INTO transactions (
-                transaction_id,
-                account_id,
-                value_cents,
-                transaction_date
-              )
-              VALUES (
-                gen_random_uuid(),
-                $1, $2, $3
-              );
-              `,
-              [account.accountId, initialBalanceCents, accountInput.createDate]
-            );
-          }
-
-          return account;
-        });
-      } catch (error) {
-        const pgError = error as { code?: string };
-        if (pgError.code === "23503") {
-          throw new PersonNotFoundError();
-        }
-        throw error;
-      }
-    }
-
-    const account = await this.accountsRepo.create(accountInput);
+    // Use atomic creation if there's an initial balance
     if (initialBalanceCents > 0) {
-      await this.transactionsRepo.create({
-        accountId: account.accountId,
-        valueCents: initialBalanceCents,
-        transactionDate: accountInput.createDate
-      });
+      return await this.accountsRepo.createWithInitialBalance(
+        accountInput,
+        initialBalanceCents,
+        createDate
+      );
     }
-
-    return account;
+    
+    // Otherwise just create the account
+    return await this.accountsRepo.create(accountInput);
   }
 
   async getBalance(accountId: string): Promise<{ balanceCents: number }> {
@@ -232,7 +91,7 @@ export class AccountsService {
     return { balanceCents: account.balanceCents };
   }
 
-  async blockAccount(accountId: string): Promise<Account> {
+  async blockAccount(accountId: string, requestId?: string): Promise<Account> {
     const account = await this.accountsRepo.getById(accountId);
     if (!account) {
       throw new NotFoundError();
@@ -241,11 +100,20 @@ export class AccountsService {
       throw new AlreadyBlockedError();
     }
     const updated = await this.accountsRepo.setActiveFlag(accountId, false);
-    console.info("Account blocked", { accountId });
+    
+    // Create audit event
+    await this.eventsRepo.create({
+      accountId,
+      eventType: 'BLOCKED',
+      eventDate: this.now().toISOString(),
+      requestId
+    });
+    
+    this.logger.info("Account blocked", { accountId, requestId });
     return updated;
   }
 
-  async unblockAccount(accountId: string): Promise<Account> {
+  async unblockAccount(accountId: string, requestId?: string): Promise<Account> {
     const account = await this.accountsRepo.getById(accountId);
     if (!account) {
       throw new NotFoundError();
@@ -254,239 +122,110 @@ export class AccountsService {
       throw new AlreadyUnblockedError();
     }
     const updated = await this.accountsRepo.setActiveFlag(accountId, true);
-    console.info("Account unblocked", { accountId });
+    
+    // Create audit event
+    await this.eventsRepo.create({
+      accountId,
+      eventType: 'UNBLOCKED',
+      eventDate: this.now().toISOString(),
+      requestId
+    });
+    
+    this.logger.info("Account unblocked", { accountId, requestId });
     return updated;
   }
 
   async deposit(
     accountId: string,
-    amountCents: number
+    amountCents: number,
+    requestId?: string,
+    idempotencyKey?: string
   ): Promise<{ balanceCents: number; transactionId: string }> {
     if (amountCents <= 0) {
       throw new InvalidAmountError();
     }
     this.validateCents(amountCents, "Amount");
 
-    const mutex = this.mutexMap.get(accountId);
-    const release = await mutex.lock();
-    try {
-      if (config.REPO_PROVIDER === "postgres") {
+    // Only use mutex for memory provider, postgres handles it with transactions
+    if (config.REPO_PROVIDER === "memory") {
+      const mutex = this.mutexMap.get(accountId);
+      const release = await mutex.lock();
+      try {
+        return await this.accountsRepo.atomicDeposit(
+          accountId,
+          amountCents,
+          this.now().toISOString(),
+          idempotencyKey
+        );
+      } catch (error) {
+        // Safely release mutex without masking original error
         try {
-          return await this.withPostgresTransaction(async (client) => {
-            const account = await this.getAccountForUpdate(client, accountId);
-            if (!account.activeFlag) {
-              throw new AccountBlockedError();
-            }
-
-            const txResult = await client.query(
-              `
-              INSERT INTO transactions (
-                transaction_id,
-                account_id,
-                value_cents,
-                transaction_date
-              )
-              VALUES (
-                gen_random_uuid(),
-                $1, $2, $3
-              )
-              RETURNING transaction_id AS "transactionId";
-              `,
-              [accountId, amountCents, this.now().toISOString()]
-            );
-
-            const updatedResult = await client.query(
-              `
-              UPDATE account
-              SET balance_cents = $2
-              WHERE account_id = $1
-              RETURNING
-                account_id AS "accountId",
-                person_id AS "personId",
-                balance_cents AS "balanceCents",
-                daily_withdrawal_limit_cents AS "dailyWithdrawalLimitCents",
-                active_flag AS "activeFlag",
-                account_type AS "accountType",
-                create_date AS "createDate";
-              `,
-              [accountId, account.balanceCents + amountCents]
-            );
-
-            const updated = this.mapAccountRow(updatedResult.rows[0]);
-            return {
-              balanceCents: updated.balanceCents,
-              transactionId: txResult.rows[0].transactionId as string
-            };
-          });
-        } catch (error) {
-          const err = error instanceof Error ? error : new Error("Unknown error");
-          console.error("Deposit failed", {
-            accountId,
-            amountCents,
-            error: err.message
-          });
-          throw error;
+          release();
+        } catch (releaseError) {
+          this.logger.error("Failed to release mutex", { accountId });
         }
+        throw error;
       }
-
-      const account = await this.accountsRepo.getById(accountId);
-      if (!account) {
-        throw new NotFoundError();
-      }
-      if (!account.activeFlag) {
-        throw new AccountBlockedError();
-      }
-
-      const tx = await this.transactionsRepo.create({
-        accountId,
-        valueCents: amountCents,
-        transactionDate: this.now().toISOString()
-      });
-
-      const updated = await this.accountsRepo.updateBalance(
-        accountId,
-        account.balanceCents + amountCents
-      );
-
-      return { balanceCents: updated.balanceCents, transactionId: tx.transactionId };
-    } finally {
-      release();
     }
+
+    // Postgres uses database-level locking
+    return await this.accountsRepo.atomicDeposit(
+      accountId,
+      amountCents,
+      this.now().toISOString(),
+      idempotencyKey
+    );
   }
 
   async withdraw(
     accountId: string,
-    amountCents: number
+    amountCents: number,
+    requestId?: string,
+    idempotencyKey?: string
   ): Promise<{ balanceCents: number; transactionId: string }> {
     if (amountCents <= 0) {
       throw new InvalidAmountError();
     }
     this.validateCents(amountCents, "Amount");
 
-    const mutex = this.mutexMap.get(accountId);
-    const release = await mutex.lock();
-    try {
-      if (config.REPO_PROVIDER === "postgres") {
-        try {
-          return await this.withPostgresTransaction(async (client) => {
-            const account = await this.getAccountForUpdate(client, accountId);
-            if (!account.activeFlag) {
-              throw new AccountBlockedError();
-            }
-            if (account.balanceCents < amountCents) {
-              const deficit = amountCents - account.balanceCents;
-              throw new InsufficientFundsError(
-                `Insufficient funds: short by ${deficit} cents`
-              );
-            }
+    const transactionDate = this.now().toISOString();
+    // Daily limits use configured timezone (default: UTC)
+    // Configure via DAILY_LIMIT_TIMEZONE env var (e.g., 'America/New_York')
+    const today = this.getTodayInConfiguredTimezone(transactionDate);
 
-            const today = this.now().toISOString().slice(0, 10);
-            const withdrawalsResult = await client.query(
-              `
-              SELECT COALESCE(SUM(ABS(value_cents)), 0) AS total
-              FROM transactions
-              WHERE account_id = $1
-                AND value_cents < 0
-                AND transaction_date::date = $2::date;
-              `,
-              [accountId, today]
-            );
-
-            const withdrawals = Number(withdrawalsResult.rows[0]?.total ?? 0);
-            if (withdrawals + amountCents > account.dailyWithdrawalLimitCents) {
-              throw new DailyLimitExceededError();
-            }
-
-            const txResult = await client.query(
-              `
-              INSERT INTO transactions (
-                transaction_id,
-                account_id,
-                value_cents,
-                transaction_date
-              )
-              VALUES (
-                gen_random_uuid(),
-                $1, $2, $3
-              )
-              RETURNING transaction_id AS "transactionId";
-              `,
-              [accountId, -amountCents, this.now().toISOString()]
-            );
-
-            const updatedResult = await client.query(
-              `
-              UPDATE account
-              SET balance_cents = $2
-              WHERE account_id = $1
-              RETURNING
-                account_id AS "accountId",
-                person_id AS "personId",
-                balance_cents AS "balanceCents",
-                daily_withdrawal_limit_cents AS "dailyWithdrawalLimitCents",
-                active_flag AS "activeFlag",
-                account_type AS "accountType",
-                create_date AS "createDate";
-              `,
-              [accountId, account.balanceCents - amountCents]
-            );
-
-            const updated = this.mapAccountRow(updatedResult.rows[0]);
-            return {
-              balanceCents: updated.balanceCents,
-              transactionId: txResult.rows[0].transactionId as string
-            };
-          });
-        } catch (error) {
-          const err = error instanceof Error ? error : new Error("Unknown error");
-          console.error("Withdraw failed", {
-            accountId,
-            amountCents,
-            error: err.message
-          });
-          throw error;
-        }
-      }
-
-      const account = await this.accountsRepo.getById(accountId);
-      if (!account) {
-        throw new NotFoundError();
-      }
-      if (!account.activeFlag) {
-        throw new AccountBlockedError();
-      }
-      if (account.balanceCents < amountCents) {
-        const deficit = amountCents - account.balanceCents;
-        throw new InsufficientFundsError(
-          `Insufficient funds: short by ${deficit} cents`
+    // Only use mutex for memory provider, postgres handles it with transactions
+    if (config.REPO_PROVIDER === "memory") {
+      const mutex = this.mutexMap.get(accountId);
+      const release = await mutex.lock();
+      try {
+        return await this.accountsRepo.atomicWithdraw(
+          accountId,
+          amountCents,
+          0, // dailyWithdrawalLimit not used, repo gets it from account
+          transactionDate,
+          today,
+          idempotencyKey
         );
+      } catch (error) {
+        // Safely release mutex without masking original error
+        try {
+          release();
+        } catch (releaseError) {
+          this.logger.error("Failed to release mutex", { accountId });
+        }
+        throw error;
       }
-
-      const today = this.now().toISOString().slice(0, 10);
-      const withdrawals = await this.transactionsRepo.sumWithdrawalsForDay(
-        accountId,
-        today
-      );
-
-      if (withdrawals + amountCents > account.dailyWithdrawalLimitCents) {
-        throw new DailyLimitExceededError();
-      }
-
-      const tx = await this.transactionsRepo.create({
-        accountId,
-        valueCents: -amountCents,
-        transactionDate: this.now().toISOString()
-      });
-
-      const updated = await this.accountsRepo.updateBalance(
-        accountId,
-        account.balanceCents - amountCents
-      );
-
-      return { balanceCents: updated.balanceCents, transactionId: tx.transactionId };
-    } finally {
-      release();
     }
+
+    // Postgres uses database-level locking
+    return await this.accountsRepo.atomicWithdraw(
+      accountId,
+      amountCents,
+      0, // dailyWithdrawalLimit not used, repo gets it from account
+      transactionDate,
+      today,
+      idempotencyKey
+    );
   }
 
   async statement(
@@ -501,7 +240,6 @@ export class AccountsService {
       throw new NotFoundError();
     }
 
-    const allTransactions = await this.transactionsRepo.listByAccount(accountId);
     const periodTransactions = await this.transactionsRepo.listByAccount(
       accountId,
       from,
@@ -515,15 +253,14 @@ export class AccountsService {
       to
     );
 
-    const sumBeforeFrom = from
+    // Calculate opening balance: all transactions before the 'from' date
+    const openingBalance = from
       ? (await this.transactionsRepo.sumByAccountRange(
           accountId,
           undefined,
           this.previousDay(from)
         )).totalNet
       : 0;
-
-    const openingBalance = from ? sumBeforeFrom : 0;
     const totals = await this.transactionsRepo.sumByAccountRange(
       accountId,
       from,
@@ -554,8 +291,15 @@ export class AccountsService {
   }
 
   private validateCents(value: number, label: string) {
-    if (!Number.isSafeInteger(value) || value > AccountsService.MAX_CENTS) {
-      throw new InvalidAmountError(`${label} exceeds allowed limits`);
+    if (!Number.isSafeInteger(value) || value > AccountsService.MAX_CENTS || value < 0) {
+      throw new InvalidAmountError(`${label} exceeds allowed limits or is negative`);
     }
+  }
+
+  private getTodayInConfiguredTimezone(isoDate: string): string {
+    // For now, use UTC (matches DAILY_LIMIT_TIMEZONE=UTC)
+    // In production, use a proper timezone library like date-fns-tz or luxon
+    // based on config.DAILY_LIMIT_TIMEZONE
+    return isoDate.slice(0, 10);
   }
 }

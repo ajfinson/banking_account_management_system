@@ -14,22 +14,47 @@ export class PostgresTransactionsRepository implements TransactionsRepository {
         transaction_id,
         account_id,
         value_cents,
-        transaction_date
+        transaction_date,
+        balance_after,
+        idempotency_key
       )
       VALUES (
         gen_random_uuid(),
-        $1, $2, $3
+        $1, $2, $3, $4, $5
       )
       RETURNING
         transaction_id AS "transactionId",
         account_id AS "accountId",
         value_cents AS "valueCents",
-        transaction_date AS "transactionDate";
+        transaction_date AS "transactionDate",
+        balance_after AS "balanceAfter",
+        idempotency_key AS "idempotencyKey";
       `,
-      [input.accountId, input.valueCents, input.transactionDate]
+      [input.accountId, input.valueCents, input.transactionDate, input.balanceAfter, input.idempotencyKey ?? null]
     );
 
     return result.rows[0] as Transaction;
+  }
+
+  async findByIdempotencyKey(idempotencyKey: string): Promise<Transaction | null> {
+    const pool = getPool();
+    const result = await pool.query(
+      `
+      SELECT
+        transaction_id AS "transactionId",
+        account_id AS "accountId",
+        value_cents AS "valueCents",
+        transaction_date AS "transactionDate",
+        balance_after AS "balanceAfter",
+        idempotency_key AS "idempotencyKey"
+      FROM transactions
+      WHERE idempotency_key = $1
+      LIMIT 1;
+      `,
+      [idempotencyKey]
+    );
+
+    return (result.rows[0] as Transaction | undefined) ?? null;
   }
 
   async listByAccount(
@@ -69,10 +94,11 @@ export class PostgresTransactionsRepository implements TransactionsRepository {
         transaction_id AS "transactionId",
         account_id AS "accountId",
         value_cents AS "valueCents",
-        transaction_date AS "transactionDate"
+        transaction_date AS "transactionDate",
+        balance_after AS "balanceAfter"
       FROM transactions
       WHERE ${conditions.join(" AND ")}
-      ORDER BY transaction_date ASC${limitOffset};
+      ORDER BY transaction_date ASC, transaction_id ASC${limitOffset};
       `,
       params
     );

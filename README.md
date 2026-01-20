@@ -56,7 +56,44 @@ psql -U postgres -d bank -f scripts/seed.sql
 
 ## Run tests
 
-`npm test`
+### Quick tests (Memory mode)
+```bash
+npm test
+# or specifically:
+npm run test:fast
+```
+
+Runs core unit and concurrency tests (~3 seconds).
+
+### Full test suite (Postgres required)
+```bash
+# Set up test database
+export DATABASE_URL="postgresql://user:password@localhost:5432/banking_test"
+psql $DATABASE_URL -f scripts/schema.sql
+psql $DATABASE_URL -f scripts/seed.sql
+
+# Run all tests
+REPO_PROVIDER=postgres npm run test:all
+```
+
+### Test categories
+
+| Command | Tests | Duration | Database | Purpose |
+|---------|-------|----------|----------|---------|
+| `npm test` | Unit + Concurrency | ~3s | Memory | Fast feedback |
+| `npm run test:integration` | Error handling | ~15s | Postgres | Resilience |
+| `npm run test:load` | Load tests | ~2min | Postgres | Performance |
+| `npm run test:chaos` | Chaos engineering | ~2min | Postgres | Edge cases |
+
+See [TESTING.md](TESTING.md) for detailed testing documentation.
+
+### Test coverage
+
+- ✅ **Unit tests**: Business logic, validation, edge cases
+- ✅ **Concurrency tests**: Race conditions, mutex behavior
+- ✅ **Error handling**: Connection failures, retry exhaustion, rollbacks
+- ✅ **Load tests**: 500+ concurrent operations, pool exhaustion
+- ✅ **Chaos tests**: Clock skew, extreme values, long transactions
 
 ## API endpoints
 

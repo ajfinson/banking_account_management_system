@@ -6,12 +6,31 @@ import {
 } from "../../modules/transactions/transactions.repository";
 
 export class MemoryTransactionsRepository implements TransactionsRepository {
-  private readonly transactions: Transaction[] = [];
+  constructor(private readonly transactions: Transaction[] = []) {}
 
   async create(input: CreateTransactionInput): Promise<Transaction> {
-    const tx: Transaction = { ...input, transactionId: randomUUID() };
+    // Check for duplicate idempotency key
+    if (input.idempotencyKey) {
+      const existing = this.transactions.find(tx => tx.idempotencyKey === input.idempotencyKey);
+      if (existing) {
+        throw new Error(`duplicate key value violates unique constraint "idempotency_key"`);
+      }
+    }
+    
+    const tx: Transaction = {
+      transactionId: randomUUID(),
+      accountId: input.accountId,
+      valueCents: input.valueCents,
+      transactionDate: input.transactionDate,
+      balanceAfter: input.balanceAfter,
+      idempotencyKey: input.idempotencyKey
+    };
     this.transactions.push(tx);
     return tx;
+  }
+
+  async findByIdempotencyKey(idempotencyKey: string): Promise<Transaction | null> {
+    return this.transactions.find(tx => tx.idempotencyKey === idempotencyKey) ?? null;
   }
 
   async listByAccount(

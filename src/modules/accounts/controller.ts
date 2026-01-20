@@ -7,24 +7,24 @@ export class AccountsController {
     return this.service.createAccount(input);
   }
 
-  deposit(accountId: string, amountCents: number) {
-    return this.service.deposit(accountId, amountCents);
+  deposit(accountId: string, amountCents: number, requestId?: string, idempotencyKey?: string) {
+    return this.service.deposit(accountId, amountCents, requestId, idempotencyKey);
   }
 
-  withdraw(accountId: string, amountCents: number) {
-    return this.service.withdraw(accountId, amountCents);
+  withdraw(accountId: string, amountCents: number, requestId?: string, idempotencyKey?: string) {
+    return this.service.withdraw(accountId, amountCents, requestId, idempotencyKey);
   }
 
   getBalance(accountId: string) {
     return this.service.getBalance(accountId);
   }
 
-  blockAccount(accountId: string) {
-    return this.service.blockAccount(accountId);
+  blockAccount(accountId: string, requestId?: string) {
+    return this.service.blockAccount(accountId, requestId);
   }
 
-  unblockAccount(accountId: string) {
-    return this.service.unblockAccount(accountId);
+  unblockAccount(accountId: string, requestId?: string) {
+    return this.service.unblockAccount(accountId, requestId);
   }
 
   statement(

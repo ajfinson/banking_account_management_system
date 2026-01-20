@@ -7,7 +7,12 @@
     "dev": "tsx src/server.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
-    "test": "jest"
+    "test": "jest",
+    "test:fast": "jest --testPathIgnorePatterns=load.test.ts,chaos.test.ts,error-handling.test.ts",
+    "test:integration": "jest error-handling.test.ts",
+    "test:load": "jest load.test.ts --testTimeout=120000",
+    "test:chaos": "jest chaos.test.ts --testTimeout=120000",
+    "test:all": "jest --testTimeout=120000"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

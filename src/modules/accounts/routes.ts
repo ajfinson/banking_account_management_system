@@ -4,7 +4,8 @@ import {
   accountParamsSchema,
   amountBodySchema,
   createAccountBodySchema,
-  statementQuerySchema
+  statementQuerySchema,
+  idempotencyKeySchema
 } from "./schemas";
 
 export function registerAccountsRoutes(
@@ -20,13 +21,15 @@ export function registerAccountsRoutes(
   app.post("/accounts/:id/deposit", async (request) => {
     const params = accountParamsSchema.parse(request.params);
     const body = amountBodySchema.parse(request.body);
-    return controller.deposit(params.id, body.amountCents);
+    const idempotencyKey = idempotencyKeySchema.parse(request.headers['idempotency-key']);
+    return controller.deposit(params.id, body.amountCents, request.id, idempotencyKey);
   });
 
   app.post("/accounts/:id/withdraw", async (request) => {
     const params = accountParamsSchema.parse(request.params);
     const body = amountBodySchema.parse(request.body);
-    return controller.withdraw(params.id, body.amountCents);
+    const idempotencyKey = idempotencyKeySchema.parse(request.headers['idempotency-key']);
+    return controller.withdraw(params.id, body.amountCents, request.id, idempotencyKey);
   });
 
   app.get("/accounts/:id/balance", async (request) => {
@@ -36,13 +39,24 @@ export function registerAccountsRoutes(
 
   app.post("/accounts/:id/block", async (request) => {
     const params = accountParamsSchema.parse(request.params);
-    return controller.blockAccount(params.id);
+    return controller.blockAccount(params.id, request.id);
+  });
+
+  app.post("/accounts/:id/unblock", async (request) => {
+    const params = accountParamsSchema.parse(request.params);
+    return controller.unblockAccount(params.id, request.id);
   });
 
   app.get("/accounts/:id/statement", async (request) => {
     const params = accountParamsSchema.parse(request.params);
     const query = statementQuerySchema.parse(request.query);
-    return controller.statement(params.id, query.from, query.to);
+    return controller.statement(
+      params.id,
+      query.from,
+      query.to,
+      query.limit,
+      query.offset
+    );
   });
 }
 
@@ -148,7 +162,8 @@ export function registerAccountsRoutesWithSchemas(
     async (request) => {
       const params = accountParamsSchema.parse(request.params);
       const body = amountBodySchema.parse(request.body);
-      return controller.deposit(params.id, body.amountCents);
+      const idempotencyKey = idempotencyKeySchema.parse(request.headers['idempotency-key']);
+      return controller.deposit(params.id, body.amountCents, request.id, idempotencyKey);
     }
   );
 
@@ -183,7 +198,8 @@ export function registerAccountsRoutesWithSchemas(
     async (request) => {
       const params = accountParamsSchema.parse(request.params);
       const body = amountBodySchema.parse(request.body);
-      return controller.withdraw(params.id, body.amountCents);
+      const idempotencyKey = idempotencyKeySchema.parse(request.headers['idempotency-key']);
+      return controller.withdraw(params.id, body.amountCents, request.id, idempotencyKey);
     }
   );
 
@@ -223,7 +239,7 @@ export function registerAccountsRoutesWithSchemas(
     },
     async (request) => {
       const params = accountParamsSchema.parse(request.params);
-      return controller.blockAccount(params.id);
+      return controller.blockAccount(params.id, request.id);
     }
   );
 
@@ -243,7 +259,7 @@ export function registerAccountsRoutesWithSchemas(
     },
     async (request) => {
       const params = accountParamsSchema.parse(request.params);
-      return controller.unblockAccount(params.id);
+      return controller.unblockAccount(params.id, request.id);
     }
   );
 

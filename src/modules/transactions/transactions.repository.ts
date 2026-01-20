@@ -3,12 +3,15 @@ export type Transaction = {
   accountId: string;
   valueCents: number;
   transactionDate: string;
+  balanceAfter: number;
+  idempotencyKey?: string;
 };
 
 export type CreateTransactionInput = Omit<Transaction, "transactionId">;
 
 export interface TransactionsRepository {
   create(input: CreateTransactionInput): Promise<Transaction>;
+  findByIdempotencyKey(idempotencyKey: string): Promise<Transaction | null>;
   listByAccount(
     accountId: string,
     from?: string,

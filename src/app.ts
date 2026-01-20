@@ -14,8 +14,14 @@ import { config } from "./config";
 import { getPool } from "./infra/postgres/pool";
 
 export function buildApp(options: ContainerOptions = {}): FastifyInstance {
-  const app = Fastify({ logger: false });
-  const container = createContainer(options);
+  const app = Fastify({
+    logger: config.REPO_PROVIDER === 'postgres' ? true : false,
+    bodyLimit: config.BODY_LIMIT_BYTES,
+    maxParamLength: config.MAX_PARAM_LENGTH,
+    connectionTimeout: config.REQUEST_TIMEOUT_MS,
+    requestTimeout: config.REQUEST_TIMEOUT_MS
+  });
+  const container = createContainer({ ...options, logger: app.log });
 
   app.addHook("onRequest", async (request, reply) => {
     reply.header("x-request-id", request.id);
@@ -23,7 +29,12 @@ export function buildApp(options: ContainerOptions = {}): FastifyInstance {
 
   app.register(rateLimit, {
     max: config.RATE_LIMIT_MAX,
-    timeWindow: config.RATE_LIMIT_WINDOW_MS
+    timeWindow: config.RATE_LIMIT_WINDOW_MS,
+    addHeaders: {
+      'x-ratelimit-limit': true,
+      'x-ratelimit-remaining': true,
+      'x-ratelimit-reset': true
+    }
   });
 
   const swaggerOptions: SwaggerOptions = {
@@ -53,9 +64,30 @@ export function buildApp(options: ContainerOptions = {}): FastifyInstance {
     }
     try {
       const pool = getPool();
+      const start = Date.now();
       await pool.query("SELECT 1");
-      return { status: "ok" };
-    } catch {
+      const latency = Date.now() - start;
+      
+      // Monitor connection pool health
+      const poolInfo = {
+        totalCount: pool.totalCount,
+        idleCount: pool.idleCount,
+        waitingCount: pool.waitingCount
+      };
+      
+      // Warn if pool is nearly exhausted
+      const utilizationPct = ((poolInfo.totalCount - poolInfo.idleCount) / poolInfo.totalCount) * 100;
+      const status = utilizationPct > 90 ? "degraded" : "ok";
+      
+      return { 
+        status, 
+        latency, 
+        pool: poolInfo,
+        utilization: `${utilizationPct.toFixed(1)}%`
+      };
+    } catch (error) {
+      // Log error internally but don't expose details to clients
+      app.log.error({ err: error }, "Database health check failed");
       return { status: "down" };
     }
   });
@@ -108,6 +140,17 @@ export function buildApp(options: ContainerOptions = {}): FastifyInstance {
       error: "NOT_FOUND",
       message: `Route ${request.method} ${request.url} not found`
     });
+  });
+
+  // Graceful shutdown hook
+  app.addHook("onClose", async () => {
+    // Clean up mutex map timer
+    container.mutexMap?.destroy();
+    
+    if (config.REPO_PROVIDER === "postgres") {
+      const { closePool } = await import("./infra/postgres/pool");
+      await closePool();
+    }
   });
 
   return app;
