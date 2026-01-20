@@ -324,7 +324,7 @@ export class PostgresAccountsRepository implements AccountsRepository {
   ): Promise<{ balanceCents: number; transactionId: string }> {
     return this.withRetry(async () => {
       const pool = getPool();
-      let client = null;
+      let client;
       
       try {
         client = await pool.connect();
@@ -474,7 +474,7 @@ export class PostgresAccountsRepository implements AccountsRepository {
   ): Promise<Account> {
     return this.withRetry(async () => {
       const pool = getPool();
-      let client = null;
+      let client;
       const createDate = input.createDate || new Date().toISOString();
       
       try {

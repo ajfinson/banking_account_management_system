@@ -40,6 +40,9 @@ export class MutexMap {
         this.cleanup();
       }
     }, 60_000);
+    if (this.cleanupInterval) {
+      this.cleanupInterval.unref();
+    }
   }
 
   get(accountId: string): Mutex {

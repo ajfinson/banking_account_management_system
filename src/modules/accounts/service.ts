@@ -80,7 +80,8 @@ export class AccountsService {
     }
     
     // Otherwise just create the account
-    return await this.accountsRepo.create(accountInput);
+    const result = await this.accountsRepo.create(accountInput);
+    return result;
   }
 
   async getBalance(accountId: string): Promise<{ balanceCents: number }> {

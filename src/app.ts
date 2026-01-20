@@ -8,7 +8,7 @@ import type { FastifySwaggerUiOptions } from "@fastify/swagger-ui";
 import { ZodError } from "zod";
 import { AppError } from "./common/errors";
 import { ContainerOptions, createContainer } from "./di";
-import { registerAccountsRoutesWithSchemas } from "./modules/accounts/routes";
+import { registerAccountsRoutes, registerAccountsRoutesWithSchemas } from "./modules/accounts/routes";
 import { openapiDocument } from "./common/openapi";
 import { config } from "./config";
 import { getPool } from "./infra/postgres/pool";
